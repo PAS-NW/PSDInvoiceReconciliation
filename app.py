@@ -477,9 +477,10 @@ st.markdown(
     .kpi-card {{ background:#fff !important; border-radius:18px !important; border:1px solid #e4e7eb !important; box-shadow:0 5px 20px rgba(15,23,42,.08) !important; min-height:118px !important; padding:18px 22px !important; display:flex; align-items:center; gap:18px; }}
     .kpi-icon {{ width:64px; height:64px; border-radius:50%; background:#fff5bd; display:flex; align-items:center; justify-content:center; flex:none; }}
     .kpi-icon svg {{ width:35px; height:35px; stroke:#0A0A0A; stroke-width:2.5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
+    .kpi-card > div:last-child {{ min-width:0; flex:1; }}
     .kpi-label {{ color:#111 !important; font-size:15px !important; font-weight:950 !important; margin:0 0 3px !important; }}
     .kpi-value {{ color:#e9b900 !important; font-size:42px !important; line-height:.98 !important; font-weight:950 !important; text-shadow:none !important; }}
-    .kpi-money .kpi-value {{ font-size:31px !important; line-height:1.05 !important; white-space:nowrap !important; letter-spacing:-0.04em !important; }}
+    .kpi-money .kpi-value {{ font-size:27px !important; line-height:1.05 !important; white-space:nowrap !important; letter-spacing:-0.03em !important; }}
     .kpi-sub {{ color:#374151 !important; font-size:14px !important; margin-top:6px !important; }}
     .kpi-unmatched .kpi-value {{ color:#e12626 !important; }}
     .kpi-matched .kpi-value {{ color:#16a34a !important; }}
@@ -544,7 +545,7 @@ with st.sidebar:
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span>Download Reconciliation<br>PDF</span></div>
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg></span><span>Smoke Crack</span></div>
         <div class="pas-sidebar-rule"></div>
-        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.2 Vehicle Hire Simplified</div>
+        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.3 Vehicle Hire Simplified</div>
         """,
         unsafe_allow_html=True,
     )
@@ -553,7 +554,7 @@ st.markdown(
     """
     <div class="pas-hero">
       <div class="pas-hero-logo">PAS</div>
-      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.2 Vehicle Hire Simplified</span></div>
+      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.3 Vehicle Hire Simplified</span></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -632,9 +633,9 @@ except Exception:
 
 VEHICLE_RESULT_COLUMNS = [
     "Component No",
-    "Vehicle Registration",
-    "Driver / Assigned User",
+    "Vehicle Reg",
     "Job Number / Site",
+    "Driver / Assigned User",
     "On/Off Hire",
     "Invoice line value",
     "Total per vehicle",
@@ -643,15 +644,13 @@ VEHICLE_RESULT_COLUMNS = [
 
 DETAIL_COLUMNS = [
     "Component No",
-    "Vehicle Registration",
-    "Driver / Assigned User",
-    "Job Number / Site",
-    "On/Off Hire",
+    "Vehicle Reg",
     "From",
     "To",
     "Invoice line value",
-    "VAT",
-    "Gross",
+    "Job Number / Site",
+    "Driver / Assigned User",
+    "On/Off Hire",
     "Status",
 ]
 
@@ -872,6 +871,7 @@ def reconcile_vehicle_lines(lines: List[Dict[str, str]], vehicle_lookup: Dict[st
         match = vehicle_lookup.get(reg, {})
         matched = bool(match)
         row = dict(line)
+        row["Vehicle Reg"] = row.get("Vehicle Registration", "")
         row["Driver / Assigned User"] = match.get("Driver / Assigned User", "") if matched else ""
         row["Job Number / Site"] = match.get("Job Number / Site", "") if matched else ""
         row["On/Off Hire"] = match.get("On/Off Hire", "") if matched else ""
@@ -908,8 +908,6 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
         grand_row = {col: "" for col in vehicle_lines.columns}
         grand_row["Job Number / Site"] = "Grand Total"
         grand_row["Invoice line value"] = float(vehicle_lines["Invoice line value"].sum())
-        grand_row["VAT"] = float(vehicle_lines["VAT"].sum()) if "VAT" in vehicle_lines else 0
-        grand_row["Gross"] = float(vehicle_lines["Gross"].sum()) if "Gross" in vehicle_lines else 0
         vehicle_lines = pd.concat([vehicle_lines, pd.DataFrame([grand_row])], ignore_index=True)
 
     by_job = (
@@ -1059,6 +1057,8 @@ def render_results_table(df: pd.DataFrame):
         st.markdown('<div class="pas-table-wrap"><table class="pas-table"><tbody><tr><td>No vehicle lines found.</td></tr></tbody></table></div>', unsafe_allow_html=True)
         return
     display_df = df.copy()
+    if "Vehicle Reg" not in display_df.columns and "Vehicle Registration" in display_df.columns:
+        display_df["Vehicle Reg"] = display_df["Vehicle Registration"]
     for col in VEHICLE_RESULT_COLUMNS:
         if col not in display_df.columns:
             display_df[col] = ""
