@@ -543,7 +543,7 @@ with st.sidebar:
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span>Download Reconciliation<br>PDF</span></div>
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg></span><span>Smoke Crack</span></div>
         <div class="pas-sidebar-rule"></div>
-        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.0 Vehicle Hire</div>
+        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.1 Vehicle Hire Simplified</div>
         """,
         unsafe_allow_html=True,
     )
@@ -552,7 +552,7 @@ st.markdown(
     """
     <div class="pas-hero">
       <div class="pas-hero-logo">PAS</div>
-      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.0 Vehicle Hire</span></div>
+      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.1 Vehicle Hire Simplified</span></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -634,9 +634,9 @@ VEHICLE_RESULT_COLUMNS = [
     "Vehicle Registration",
     "Driver / Assigned User",
     "Job Number / Site",
+    "On/Off Hire",
     "Invoice line value",
     "Total per vehicle",
-    "Total per job",
     "Status",
 ]
 
@@ -645,6 +645,7 @@ DETAIL_COLUMNS = [
     "Vehicle Registration",
     "Driver / Assigned User",
     "Job Number / Site",
+    "On/Off Hire",
     "From",
     "To",
     "Invoice line value",
@@ -727,48 +728,89 @@ def fmt_money(value) -> str:
         return "£0.00"
 
 
+
 def load_vehicle_database(uploaded_file) -> Dict[str, Dict[str, str]]:
     """Load Vehicles.xlsx and create a registration lookup.
 
-    Vehicles sheet wins over Off Hire - Sold if the same reg appears twice.
-    Job is intentionally left blank when a match cannot be found later.
+    Vehicle registration is matched by the Vehicle Reg/Registration column.
+    Job Number / Site is forced from Column M (zero-based index 12), because
+    that is the PAS job column even if the header changes.
+
+    Off Hire - Sold can contain the same registration more than once, so the
+    latest Date Returned row wins for that sheet.
     """
     xls = pd.ExcelFile(uploaded_file)
     sheet_lookup = {s.lower().strip(): s for s in xls.sheet_names}
-    preferred_sheets = []
-    if "vehicles" in sheet_lookup:
-        preferred_sheets.append((sheet_lookup["vehicles"], 1))
-    if "off hire - sold" in sheet_lookup:
-        preferred_sheets.append((sheet_lookup["off hire - sold"], 2))
-    if not preferred_sheets:
-        preferred_sheets = [(xls.sheet_names[0], 1)]
 
-    lookup: Dict[str, Dict[str, str]] = {}
-    for sheet_name, priority in preferred_sheets:
+    active_sheet = sheet_lookup.get("vehicles")
+    offhire_sheet = sheet_lookup.get("off hire - sold") or sheet_lookup.get("off hire sold")
+
+    rows_by_reg: Dict[str, List[Dict[str, str]]] = {}
+
+    def add_sheet_rows(sheet_name: str, on_off_hire: str):
+        if not sheet_name:
+            return
         df = pd.read_excel(xls, sheet_name=sheet_name).dropna(how="all")
         cols = list(df.columns)
+
+        # PSD invoice matching is still by vehicle registration.
         reg_col = find_col(cols, ["Vehicle Reg", "Vehicle Registration", "Registration", "Reg", "VRN"])
+        if not reg_col and len(cols) >= 3:
+            reg_col = cols[2]  # PAS Vehicles.xlsx normally stores reg in Column C.
+
+        # PAS job/site is Column M, regardless of header wording.
+        job_col = cols[12] if len(cols) > 12 else find_col(cols, ["Job Number / Site", "Job No", "Job", "Site", "Project", "Location"])
+
         driver_col = find_col(cols, ["Driver", "Driver Name", "Assigned User", "User", "Employee"])
-        job_col = find_col(cols, ["Job Number / Site", "Job No", "Job", "Site", "Project", "Location"])
+        returned_col = find_col(cols, ["Date returned", "Date Returned", "Returned Date", "Off Hire Date"])
         supplier_col = find_col(cols, ["Supplier"])
+
         if not reg_col:
-            continue
+            return
+
         for _, row in df.iterrows():
             raw_reg = clean_cell(row.get(reg_col, ""))
             reg = normalise_reg(raw_reg)
             if not reg:
                 continue
-            existing = lookup.get(reg)
-            if existing and existing.get("Priority", 99) <= priority:
-                continue
-            lookup[reg] = {
+
+            returned_value = row.get(returned_col, "") if returned_col else ""
+            returned_date = pd.to_datetime(returned_value, errors="coerce", dayfirst=True)
+
+            rows_by_reg.setdefault(reg, []).append({
                 "Vehicle Registration": raw_reg.upper(),
                 "Driver / Assigned User": clean_cell(row.get(driver_col, "")) if driver_col else "",
                 "Job Number / Site": clean_cell(row.get(job_col, "")) if job_col else "",
                 "Supplier": clean_cell(row.get(supplier_col, "")) if supplier_col else "",
                 "Source Sheet": sheet_name,
-                "Priority": priority,
-            }
+                "On/Off Hire": on_off_hire,
+                "Date Returned": returned_date,
+            })
+
+    add_sheet_rows(active_sheet, "On Hire")
+    add_sheet_rows(offhire_sheet, "Off Hire")
+
+    lookup: Dict[str, Dict[str, str]] = {}
+    for reg, rows in rows_by_reg.items():
+        active_rows = [r for r in rows if r.get("On/Off Hire") == "On Hire"]
+        offhire_rows = [r for r in rows if r.get("On/Off Hire") == "Off Hire"]
+
+        if active_rows:
+            chosen = active_rows[0]
+        elif offhire_rows:
+            # Latest returned record wins, fixing repeated off-hire registrations like CK75ENU.
+            offhire_rows.sort(
+                key=lambda r: pd.Timestamp.min if pd.isna(r.get("Date Returned")) else r.get("Date Returned"),
+                reverse=True,
+            )
+            chosen = offhire_rows[0]
+        else:
+            chosen = rows[0]
+
+        chosen = dict(chosen)
+        chosen["Date Returned"] = "" if pd.isna(chosen.get("Date Returned")) else chosen.get("Date Returned").strftime("%d/%m/%Y")
+        lookup[reg] = chosen
+
     return lookup
 
 
@@ -821,6 +863,7 @@ def extract_vehicle_hire_lines_from_text(pages: List[str]) -> List[Dict[str, str
     return rows
 
 
+
 def reconcile_vehicle_lines(lines: List[Dict[str, str]], vehicle_lookup: Dict[str, Dict[str, str]]) -> pd.DataFrame:
     out = []
     for line in lines:
@@ -830,6 +873,7 @@ def reconcile_vehicle_lines(lines: List[Dict[str, str]], vehicle_lookup: Dict[st
         row = dict(line)
         row["Driver / Assigned User"] = match.get("Driver / Assigned User", "") if matched else ""
         row["Job Number / Site"] = match.get("Job Number / Site", "") if matched else ""
+        row["On/Off Hire"] = match.get("On/Off Hire", "") if matched else ""
         row["Status"] = "Matched" if matched else "Unmatched"
         out.append(row)
     df = pd.DataFrame(out)
@@ -837,26 +881,36 @@ def reconcile_vehicle_lines(lines: List[Dict[str, str]], vehicle_lookup: Dict[st
         return df
 
     vehicle_totals = df.groupby("Vehicle Registration", dropna=False)["Invoice line value"].sum().to_dict()
-    job_totals = df.groupby("Job Number / Site", dropna=False)["Invoice line value"].sum().to_dict()
     df["Total per vehicle"] = df["Vehicle Registration"].map(vehicle_totals).fillna(df["Invoice line value"])
-    df["Total per job"] = df["Job Number / Site"].map(job_totals).fillna(df["Invoice line value"])
     return df
 
 
+
 def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> bytes:
+    """Create the simplified PAS vehicle hire Excel report.
+
+    Tabs:
+    - Vehicle Lines, with a Grand Total row at the bottom.
+    - By Job.
+    """
     output = io.BytesIO()
     detail = detail_df.copy()
     if detail.empty:
         detail = pd.DataFrame(columns=DETAIL_COLUMNS)
 
-    by_vehicle = (
-        detail.groupby(["Job Number / Site", "Vehicle Registration", "Driver / Assigned User"], dropna=False, as_index=False)
-        .agg(**{
-            "Total per vehicle": ("Invoice line value", "sum"),
-            "Lines": ("Component No", "count"),
-        })
-        .sort_values(["Job Number / Site", "Vehicle Registration"], kind="stable")
-    )
+    for col in DETAIL_COLUMNS:
+        if col not in detail.columns:
+            detail[col] = ""
+
+    vehicle_lines = detail[DETAIL_COLUMNS].copy()
+    if not vehicle_lines.empty:
+        grand_row = {col: "" for col in vehicle_lines.columns}
+        grand_row["Job Number / Site"] = "Grand Total"
+        grand_row["Invoice line value"] = float(vehicle_lines["Invoice line value"].sum())
+        grand_row["VAT"] = float(vehicle_lines["VAT"].sum()) if "VAT" in vehicle_lines else 0
+        grand_row["Gross"] = float(vehicle_lines["Gross"].sum()) if "Gross" in vehicle_lines else 0
+        vehicle_lines = pd.concat([vehicle_lines, pd.DataFrame([grand_row])], ignore_index=True)
+
     by_job = (
         detail.groupby(["Job Number / Site"], dropna=False, as_index=False)
         .agg(**{
@@ -865,19 +919,17 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
         })
         .sort_values(["Job Number / Site"], kind="stable")
     )
-    grand_total = pd.DataFrame({"Metric": ["Grand total"], "Value": [detail["Invoice line value"].sum() if not detail.empty else 0]})
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        summary_df.to_excel(writer, index=False, sheet_name="Summary")
-        detail[DETAIL_COLUMNS].to_excel(writer, index=False, sheet_name="Vehicle Lines")
-        by_vehicle.to_excel(writer, index=False, sheet_name="By Vehicle")
+        vehicle_lines.to_excel(writer, index=False, sheet_name="Vehicle Lines")
         by_job.to_excel(writer, index=False, sheet_name="By Job")
-        grand_total.to_excel(writer, index=False, sheet_name="Grand Total")
 
         wb = writer.book
         if PatternFill and Font and Alignment and Border and Side and get_column_letter:
             yellow = PatternFill("solid", fgColor="FFD400")
             header_font = Font(bold=True, color="000000")
+            total_fill = PatternFill("solid", fgColor="FFF2CC")
+            total_font = Font(bold=True, color="000000")
             thin = Side(style="thin", color="D9D9D9")
             border = Border(left=thin, right=thin, top=thin, bottom=thin)
             for ws in wb.worksheets:
@@ -891,6 +943,19 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
                     for cell in row:
                         cell.alignment = Alignment(horizontal="left", vertical="center")
                         cell.border = border
+                # Highlight the grand total row on Vehicle Lines.
+                if ws.title == "Vehicle Lines" and ws.max_row >= 2:
+                    label_col = None
+                    for cell in ws[1]:
+                        if cell.value == "Job Number / Site":
+                            label_col = cell.column
+                            break
+                    if label_col:
+                        for row_idx in range(2, ws.max_row + 1):
+                            if ws.cell(row_idx, label_col).value == "Grand Total":
+                                for cell in ws[row_idx]:
+                                    cell.fill = total_fill
+                                    cell.font = total_font
                 for col_idx, column_cells in enumerate(ws.columns, start=1):
                     max_len = 12
                     for cell in column_cells:
@@ -898,19 +963,28 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
                     ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 45)
                 for row in ws.iter_rows(min_row=2):
                     for cell in row:
-                        if isinstance(cell.value, (int, float)) and any(word in str(ws.cell(1, cell.column).value).lower() for word in ["value", "total", "vat", "gross"]):
+                        header = str(ws.cell(1, cell.column).value).lower()
+                        if isinstance(cell.value, (int, float)) and any(word in header for word in ["value", "total", "vat", "gross"]):
                             cell.number_format = '£#,##0.00'
     output.seek(0)
     return output.getvalue()
 
 
+
 def make_annotated_vehicle_pdf(original_pdf_bytes: bytes, detail_df: pd.DataFrame) -> bytes:
-    """Add a clean side-note margin and annotate each matched vehicle with job/site."""
+    """Annotate each matched PSD vehicle line with Job Number / Site.
+
+    The previous version widened the page before reading text positions, which
+    could stop anchors being found on some PDFs. This version finds the vehicle
+    registration coordinates first, then adds the side-note margin and writes
+    the job/site note on the same row.
+    """
     if fitz is None or detail_df is None or detail_df.empty:
         return original_pdf_bytes
     try:
         doc = fitz.open(stream=original_pdf_bytes, filetype="pdf")
-        margin_width = 118
+        margin_width = 135
+
         for page_index in range(len(doc)):
             page = doc[page_index]
             page_rows = detail_df[detail_df["Page"] == page_index + 1].copy()
@@ -919,11 +993,8 @@ def make_annotated_vehicle_pdf(original_pdf_bytes: bytes, detail_df: pd.DataFram
 
             old_width = page.rect.width
             old_height = page.rect.height
-            new_width = old_width + margin_width
-            page.set_mediabox(fitz.Rect(0, 0, new_width, old_height))
-            page.draw_rect(fitz.Rect(old_width, 0, new_width, old_height), color=None, fill=(1, 1, 1), overlay=True)
-            page.draw_line((old_width + 2, 0), (old_width + 2, old_height), color=(0.84, 0.84, 0.84), width=0.5, overlay=True)
 
+            # Find text anchors before resizing the page.
             words = sorted(page.get_text("words"), key=lambda w: (round(w[1], 1), w[0]))
             anchors = []
             for w in words:
@@ -934,6 +1005,11 @@ def make_annotated_vehicle_pdf(original_pdf_bytes: bytes, detail_df: pd.DataFram
                         "y": (float(w[1]) + float(w[3])) / 2,
                         "used": False,
                     })
+
+            new_width = old_width + margin_width
+            page.set_mediabox(fitz.Rect(0, 0, new_width, old_height))
+            page.draw_rect(fitz.Rect(old_width, 0, new_width, old_height), color=None, fill=(1, 1, 1), overlay=True)
+            page.draw_line((old_width + 2, 0), (old_width + 2, old_height), color=(0.84, 0.84, 0.84), width=0.5, overlay=True)
 
             for _, row in page_rows.iterrows():
                 site = clean_cell(row.get("Job Number / Site", ""))
@@ -946,21 +1022,28 @@ def make_annotated_vehicle_pdf(original_pdf_bytes: bytes, detail_df: pd.DataFram
                         chosen = anchor
                         break
                 if chosen is None:
-                    continue
-                chosen["used"] = True
+                    # Fallback: use the line order from extraction if the text anchor cannot be found.
+                    row_number = list(page_rows.index).index(row.name)
+                    approx_top = 124
+                    approx_step = 17
+                    chosen = {"y": approx_top + row_number * approx_step, "used": True}
+                else:
+                    chosen["used"] = True
+
                 driver = clean_cell(row.get("Driver / Assigned User", ""))
                 note = site if not driver else f"{site} | {driver}"
-                y = chosen["y"] + 3.0
-                text_box = fitz.Rect(old_width + 8, y - 8, new_width - 5, y + 11)
+                y = float(chosen["y"]) + 3.0
+                text_box = fitz.Rect(old_width + 8, y - 8, new_width - 5, y + 13)
                 page.insert_textbox(
                     text_box,
-                    note[:48],
-                    fontsize=7.3,
+                    note[:58],
+                    fontsize=7.0,
                     fontname="helv",
                     color=(0, 0, 0),
                     align=fitz.TEXT_ALIGN_LEFT,
                     overlay=True,
                 )
+
         out = io.BytesIO()
         doc.save(out, garbage=4, deflate=True)
         doc.close()
@@ -979,7 +1062,7 @@ def render_results_table(df: pd.DataFrame):
         if col not in display_df.columns:
             display_df[col] = ""
     display_df = display_df[VEHICLE_RESULT_COLUMNS]
-    money_cols = {"Invoice line value", "Total per vehicle", "Total per job"}
+    money_cols = {"Invoice line value", "Total per vehicle"}
     rows_html = []
     for _, row in display_df.iterrows():
         cells = []
@@ -1036,10 +1119,6 @@ if run:
 
         by_job = all_df.groupby("Job Number / Site", dropna=False)["Invoice line value"].sum().reset_index()
         by_job["Invoice line value"] = by_job["Invoice line value"].round(2)
-        top_job = ""
-        if not by_job.empty:
-            top = by_job.sort_values("Invoice line value", ascending=False).iloc[0]
-            top_job = f"{clean_cell(top['Job Number / Site']) or 'Blank'}: {fmt_money(top['Invoice line value'])}"
 
         summary_df = pd.DataFrame({
             "Metric": [
@@ -1048,7 +1127,6 @@ if run:
                 "Unmatched vehicles",
                 "Match percentage",
                 "Invoice total",
-                "Top job total",
                 "Run date/time",
             ],
             "Value": [
@@ -1057,7 +1135,6 @@ if run:
                 unmatched,
                 f"{match_pct}%",
                 invoice_total,
-                top_job,
                 datetime.now().strftime("%d/%m/%Y %H:%M"),
             ],
         })
@@ -1077,7 +1154,6 @@ if run:
             "unmatched": unmatched,
             "match_pct": match_pct,
             "invoice_total": invoice_total,
-            "top_job": top_job,
             "excel_filename": f"PAS_Vehicle_Hire_Reconciliation_{stamp}.xlsx",
             "pdf_filename": f"PAS_Vehicle_Hire_Invoice_Annotated_{stamp}.pdf",
         }
@@ -1093,10 +1169,9 @@ if results is not None:
     unmatched = results["unmatched"]
     match_pct = results["match_pct"]
     invoice_total = results["invoice_total"]
-    top_job = results.get("top_job", "")
     all_df = results["all_df"]
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M8 7V3h8l4 4v14H6V7z"/><path d="M16 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/><path d="M4 7h2v14h12"/></svg></div><div><div class="kpi-label">Total vehicle lines</div><div class="kpi-value">{total}</div><div class="kpi-sub">Detected lines</div></div></div>', unsafe_allow_html=True)
     with c2:
@@ -1107,8 +1182,6 @@ if results is not None:
         st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M6 16v-4"/><path d="M11 16V8"/><path d="M16 16v-6"/><path d="M19 6l-5 5-3-3-5 5"/></svg></div><div><div class="kpi-label">Match %</div><div class="kpi-value">{match_pct}%</div><div class="kpi-sub">Core KPI</div></div></div>', unsafe_allow_html=True)
     with c5:
         st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 19V5h10v14"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></div><div><div class="kpi-label">Invoice total</div><div class="kpi-value">{fmt_money(invoice_total)}</div><div class="kpi-sub">Net value</div></div></div>', unsafe_allow_html=True)
-    with c6:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4 6 3v15"/><path d="M9 21v-8h6v8"/></svg></div><div><div class="kpi-label">Total by job</div><div class="kpi-value" style="font-size:20px;line-height:1.15;">{escape(top_job or "-")}</div><div class="kpi-sub">Highest job total</div></div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="pas-results-title">Results</div>', unsafe_allow_html=True)
     render_results_table(all_df)

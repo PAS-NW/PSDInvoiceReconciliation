@@ -4,7 +4,7 @@ PAS NW Ltd Vehicle Hire Invoice Reconciliation Tool.
 
 ## Purpose
 
-Reconcile PSD vehicle hire invoices against Vehicles.xlsx and allocate each vehicle line to the correct job/site.
+Reconcile vehicle hire invoices against Vehicles.xlsx and allocate costs to jobs/sites.
 
 ## Inputs
 
@@ -13,41 +13,11 @@ Reconcile PSD vehicle hire invoices against Vehicles.xlsx and allocate each vehi
 
 ## Matching Logic
 
-- Match vehicle registration from the invoice against the vehicle registration in Vehicles.xlsx
-- Job Number / Site is taken from Column M in Vehicles.xlsx
-- For vehicles found on the Off Hire - Sold tab, the latest Date returned row is used
-- If no match is found, Job Number / Site is left blank
-
-## Outputs
-
-### Annotated PDF
-
-- Original invoice layout preserved
-- Job Number / Site annotated beside each matched vehicle line
-- Blank where no match is found
-
-### Excel Report
-
-The Excel report contains:
-
-1. Vehicle Lines
-2. By Job
-
-The Vehicle Lines tab includes:
-
-- Component No
-- Vehicle Registration
-- Driver / Assigned User
-- Job Number / Site
-- On/Off Hire
-- From
-- To
-- Invoice line value
-- VAT
-- Gross
-- Total per job
-- Status
-- Grand total at the bottom
+- Extract vehicle registrations from the invoice PDF
+- Match against Vehicle Reg / Registration in Vehicles.xlsx
+- Job Number / Site is pulled from Column M in Vehicles.xlsx
+- Vehicles on the Off Hire - Sold sheet use the latest Date Returned record
+- If no match is found, Job Number / Site remains blank
 
 ## Dashboard KPIs
 
@@ -57,13 +27,46 @@ The Vehicle Lines tab includes:
 - Match %
 - Invoice Total
 
+## Outputs
+
+### Annotated PDF
+
+- Original invoice layout preserved
+- Side-note margin added
+- Job Number / Site annotated beside each matched vehicle line
+- Blank if no match found
+
+### Excel Report
+
+Tabs included:
+
+1. Vehicle Lines
+   - Component No
+   - Vehicle Registration
+   - Driver / Assigned User
+   - Job Number / Site
+   - On/Off Hire
+   - From
+   - To
+   - Invoice Line Value
+   - VAT
+   - Gross
+   - Status
+   - Grand Total row at the bottom
+
+2. By Job
+   - Job Number / Site
+   - Total per job
+   - Vehicle line count
+
 ## UI
 
 Uses the PAS NW Ltd standard Streamlit UI:
-
 - PAS branding
 - KPI cards
 - Sidebar
 - Animation
 - Upload workflow
 - Download buttons
+
+Version: 1.0.1 Vehicle Hire Simplified
