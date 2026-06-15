@@ -474,13 +474,13 @@ st.markdown(
     div.stButton > button[kind="secondary"], .stButton > button {{ min-height:52px !important; font-size:16px !important; box-shadow:0 6px 18px rgba(255,212,0,.25) !important; }}
     .stDownloadButton > button {{ min-height:62px !important; font-size:20px !important; box-shadow:0 6px 18px rgba(255,212,0,.25) !important; }}
 
-    .kpi-card {{ background:#fff !important; border-radius:18px !important; border:1px solid #e4e7eb !important; box-shadow:0 5px 20px rgba(15,23,42,.08) !important; min-height:118px !important; padding:18px 22px !important; display:flex; align-items:center; gap:18px; }}
+    .kpi-card {{ background:#fff !important; border-radius:18px !important; border:1px solid #e4e7eb !important; box-shadow:0 5px 20px rgba(15,23,42,.08) !important; min-height:118px !important; height:118px !important; width:100% !important; box-sizing:border-box !important; padding:18px 22px !important; display:flex; align-items:center; gap:18px; }}
     .kpi-icon {{ width:64px; height:64px; border-radius:50%; background:#fff5bd; display:flex; align-items:center; justify-content:center; flex:none; }}
     .kpi-icon svg {{ width:35px; height:35px; stroke:#0A0A0A; stroke-width:2.5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
     .kpi-card > div:last-child {{ min-width:0; flex:1; }}
     .kpi-label {{ color:#111 !important; font-size:15px !important; font-weight:950 !important; margin:0 0 3px !important; }}
     .kpi-value {{ color:#e9b900 !important; font-size:42px !important; line-height:.98 !important; font-weight:950 !important; text-shadow:none !important; }}
-    .kpi-money .kpi-value {{ font-size:27px !important; line-height:1.05 !important; white-space:nowrap !important; letter-spacing:-0.03em !important; }}
+    .kpi-money .kpi-value {{ font-size:25px !important; line-height:1.05 !important; white-space:nowrap !important; letter-spacing:-0.03em !important; }}
     .kpi-sub {{ color:#374151 !important; font-size:14px !important; margin-top:6px !important; }}
     .kpi-unmatched .kpi-value {{ color:#e12626 !important; }}
     .kpi-matched .kpi-value {{ color:#16a34a !important; }}
@@ -545,7 +545,7 @@ with st.sidebar:
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span>Download Reconciliation<br>PDF</span></div>
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg></span><span>Smoke Crack</span></div>
         <div class="pas-sidebar-rule"></div>
-        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.3 Vehicle Hire Simplified</div>
+        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.4 Vehicle Hire Simplified</div>
         """,
         unsafe_allow_html=True,
     )
@@ -554,7 +554,7 @@ st.markdown(
     """
     <div class="pas-hero">
       <div class="pas-hero-logo">PAS</div>
-      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.3 Vehicle Hire Simplified</span></div>
+      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.4 Vehicle Hire Simplified</span></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -906,7 +906,7 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
     vehicle_lines = detail[DETAIL_COLUMNS].copy()
     if not vehicle_lines.empty:
         grand_row = {col: "" for col in vehicle_lines.columns}
-        grand_row["Job Number / Site"] = "Grand Total"
+        grand_row["To"] = "Grand Total"
         grand_row["Invoice line value"] = float(vehicle_lines["Invoice line value"].sum())
         vehicle_lines = pd.concat([vehicle_lines, pd.DataFrame([grand_row])], ignore_index=True)
 
@@ -944,17 +944,12 @@ def make_vehicle_excel(summary_df: pd.DataFrame, detail_df: pd.DataFrame) -> byt
                         cell.border = border
                 # Highlight the grand total row on Vehicle Lines.
                 if ws.title == "Vehicle Lines" and ws.max_row >= 2:
-                    label_col = None
-                    for cell in ws[1]:
-                        if cell.value == "Job Number / Site":
-                            label_col = cell.column
-                            break
-                    if label_col:
-                        for row_idx in range(2, ws.max_row + 1):
-                            if ws.cell(row_idx, label_col).value == "Grand Total":
-                                for cell in ws[row_idx]:
-                                    cell.fill = total_fill
-                                    cell.font = total_font
+                    for row_idx in range(2, ws.max_row + 1):
+                        row_values = [str(cell.value).strip() for cell in ws[row_idx] if cell.value is not None]
+                        if "Grand Total" in row_values:
+                            for cell in ws[row_idx]:
+                                cell.fill = total_fill
+                                cell.font = total_font
                 for col_idx, column_cells in enumerate(ws.columns, start=1):
                     max_len = 12
                     for cell in column_cells:
