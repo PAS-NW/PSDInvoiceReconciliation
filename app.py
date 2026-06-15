@@ -479,6 +479,7 @@ st.markdown(
     .kpi-icon svg {{ width:35px; height:35px; stroke:#0A0A0A; stroke-width:2.5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
     .kpi-label {{ color:#111 !important; font-size:15px !important; font-weight:950 !important; margin:0 0 3px !important; }}
     .kpi-value {{ color:#e9b900 !important; font-size:42px !important; line-height:.98 !important; font-weight:950 !important; text-shadow:none !important; }}
+    .kpi-money .kpi-value {{ font-size:31px !important; line-height:1.05 !important; white-space:nowrap !important; letter-spacing:-0.04em !important; }}
     .kpi-sub {{ color:#374151 !important; font-size:14px !important; margin-top:6px !important; }}
     .kpi-unmatched .kpi-value {{ color:#e12626 !important; }}
     .kpi-matched .kpi-value {{ color:#16a34a !important; }}
@@ -543,7 +544,7 @@ with st.sidebar:
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span><span>Download Reconciliation<br>PDF</span></div>
         <div class="pas-nav-row"><span class="pas-nav-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg></span><span>Smoke Crack</span></div>
         <div class="pas-sidebar-rule"></div>
-        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.1 Vehicle Hire Simplified</div>
+        <div class="pas-sidebar-footer">PAS NW Ltd • v1.0.2 Vehicle Hire Simplified</div>
         """,
         unsafe_allow_html=True,
     )
@@ -552,7 +553,7 @@ st.markdown(
     """
     <div class="pas-hero">
       <div class="pas-hero-logo">PAS</div>
-      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.1 Vehicle Hire Simplified</span></div>
+      <div class="pas-hero-text">PAS NW Ltd<span class="pas-hero-dot">•</span><span class="pas-hero-version">v1.0.2 Vehicle Hire Simplified</span></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1181,7 +1182,7 @@ if results is not None:
     with c4:
         st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M6 16v-4"/><path d="M11 16V8"/><path d="M16 16v-6"/><path d="M19 6l-5 5-3-3-5 5"/></svg></div><div><div class="kpi-label">Match %</div><div class="kpi-value">{match_pct}%</div><div class="kpi-sub">Core KPI</div></div></div>', unsafe_allow_html=True)
     with c5:
-        st.markdown(f'<div class="kpi-card"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 19V5h10v14"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></div><div><div class="kpi-label">Invoice total</div><div class="kpi-value">{fmt_money(invoice_total)}</div><div class="kpi-sub">Net value</div></div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-card kpi-money"><div class="kpi-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 19V5h10v14"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></div><div><div class="kpi-label">Invoice total</div><div class="kpi-value">{fmt_money(invoice_total)}</div><div class="kpi-sub">Net value</div></div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="pas-results-title">Results</div>', unsafe_allow_html=True)
     render_results_table(all_df)
